@@ -1,0 +1,10 @@
+/target
+/fuzz/target
+**/*.rs.bk
+.agent-memory/
+*.crash
+*.log
+artifacts/
+poc-work/
+patch-drafts/
+.DS_Store
