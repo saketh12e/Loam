@@ -1,0 +1,86 @@
+[package]
+name = "loam-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+loam = { path = ".." }
+
+[[bin]]
+name = "file_open_fuzzer"
+path = "fuzz_targets/file_open_fuzzer.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "page_decode_fuzzer"
+path = "fuzz_targets/page_decode_fuzzer.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "expr_eval_fuzzer"
+path = "fuzz_targets/expr_eval_fuzzer.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "plan_exec_fuzzer"
+path = "fuzz_targets/plan_exec_fuzzer.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "spill_replay_fuzzer"
+path = "fuzz_targets/spill_replay_fuzzer.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "session_fuzzer"
+path = "fuzz_targets/session_fuzzer.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "dict_load_fuzzer"
+path = "fuzz_targets/dict_load_fuzzer.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "stats_ingest_fuzzer"
+path = "fuzz_targets/stats_ingest_fuzzer.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "view_build_fuzzer"
+path = "fuzz_targets/view_build_fuzzer.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "join_probe_fuzzer"
+path = "fuzz_targets/join_probe_fuzzer.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "txn_fuzzer"
+path = "fuzz_targets/txn_fuzzer.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "tiered_cache_fuzzer"
+path = "fuzz_targets/tiered_cache_fuzzer.rs"
+test = false
+doc = false
+
+[workspace]
