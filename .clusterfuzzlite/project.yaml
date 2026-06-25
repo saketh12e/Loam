@@ -1,0 +1,16 @@
+language: rust
+sanitizers:
+  - address
+fuzz_targets:
+  - file_open_fuzzer
+  - page_decode_fuzzer
+  - expr_eval_fuzzer
+  - plan_exec_fuzzer
+  - spill_replay_fuzzer
+  - session_fuzzer
+  - dict_load_fuzzer
+  - stats_ingest_fuzzer
+  - view_build_fuzzer
+  - join_probe_fuzzer
+  - txn_fuzzer
+  - tiered_cache_fuzzer
