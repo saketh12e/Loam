@@ -198,3 +198,78 @@ pub fn unzigzag(v: u64) -> i64 {
     ((v >> 1) as i64) ^ -((v & 1) as i64)
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reader_bounds_are_enforced() {
+        let data = [1u8, 2, 3];
+        let mut r = Reader::new(&data);
+        assert_eq!(r.u8("t").unwrap(), 1);
+        assert!(r.take(4, "t").is_err());
+        assert_eq!(r.remaining(), 2);
+    }
+
+    #[test]
+    fn varint_round_trip() {
+        for v in [0u32, 1, 127, 128, 300, 65_535, 1 << 20, u32::MAX] {
+            let mut buf = Vec::new();
+            write_varint(&mut buf, v);
+            let mut r = Reader::new(&buf);
+            assert_eq!(r.varint("v").unwrap(), v);
+        }
+    }
+
+    #[test]
+    fn varint_rejects_overlong() {
+        let buf = [0xffu8; 6];
+        let mut r = Reader::new(&buf);
+        assert!(r.varint("v").is_err());
+    }
+
+    #[test]
+    fn crc_known_vector() {
+        // CRC-32C of the ASCII string "123456789" is 0xE3069283.
+        assert_eq!(crc32c(b"123456789"), 0xE306_9283);
+    }
+
+    #[test]
+    fn zigzag_round_trip() {
+        for v in [0i64, -1, 1, i64::MIN + 1, i64::MAX, -123_456] {
+            assert_eq!(unzigzag(zigzag(v)), v);
+        }
+    }
+
+    #[test]
+    fn len_slice_round_trip() {
+        let mut buf = Vec::new();
+        write_len_slice(&mut buf, b"hello");
+        write_len_slice(&mut buf, b"");
+        let mut r = Reader::new(&buf);
+        assert_eq!(r.len_slice("a").unwrap(), b"hello");
+        assert_eq!(r.len_slice("b").unwrap(), b"");
+        assert!(r.is_empty());
+    }
+
+    #[test]
+    fn varint64_round_trip() {
+        for v in [0u64, 1, 300, 1 << 32, u64::MAX] {
+            let mut buf = Vec::new();
+            write_varint64(&mut buf, v);
+            let mut r = Reader::new(&buf);
+            assert_eq!(r.varint64("v").unwrap(), v);
+        }
+    }
+
+    #[test]
+    fn reader_position_tracks() {
+        let data = [9u8; 10];
+        let mut r = Reader::new(&data);
+        assert_eq!(r.position(), 0);
+        r.u32("t").unwrap();
+        assert_eq!(r.position(), 4);
+        r.skip(6, "t").unwrap();
+        assert!(r.is_empty());
+    }
+}

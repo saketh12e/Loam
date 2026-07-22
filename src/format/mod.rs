@@ -394,3 +394,113 @@ impl FileWriter {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::schema::tags;
+
+    fn sample_page() -> Vec<u8> {
+        let mut p = Vec::new();
+        write_varint(&mut p, tags::ENC_PLAIN);
+        write_varint(&mut p, 4);
+        p.extend_from_slice(&[1, 2, 3, 4]);
+        p
+    }
+
+    #[test]
+    fn writer_round_trip() {
+        let mut w = FileWriter::new(VERSION_V2);
+        w.column(1, "temp", tags::TYPE_I64, tags::ENC_PLAIN, false);
+        w.row_group(
+            4,
+            vec![(sample_page(), 4, tags::ENC_PLAIN)],
+            ZoneMap {
+                min: 1,
+                max: 4,
+                rows: 4,
+            },
+        );
+        let bytes = w.finish();
+        let img = open(&bytes).expect("open");
+        assert_eq!(img.version, VERSION_V2);
+        assert_eq!(img.schema.columns().len(), 1);
+        assert_eq!(img.groups.len(), 1);
+        assert_eq!(img.zones[0].rows, 4);
+        assert_eq!(img.physical_rows(0), 4);
+        assert!(img.page_bytes(&img.groups[0].pages[0]).is_ok());
+    }
+
+    #[test]
+    fn rejects_bad_magic() {
+        let bytes = b"NOPE........".to_vec();
+        assert!(open(&bytes).is_err());
+    }
+
+    #[test]
+    fn rejects_bad_footer_crc() {
+        let mut w = FileWriter::new(VERSION_V1);
+        w.column(1, "a", tags::TYPE_I64, tags::ENC_PLAIN, false);
+        w.row_group(
+            4,
+            vec![(sample_page(), 4, tags::ENC_PLAIN)],
+            ZoneMap {
+                min: 0,
+                max: 1,
+                rows: 4,
+            },
+        );
+        let mut bytes = w.finish();
+        let n = bytes.len();
+        bytes[n - 1] ^= 0xff;
+        assert!(matches!(open(&bytes), Err(Error::Checksum { .. })));
+    }
+
+    #[test]
+    fn partial_tail_is_accepted_at_open() {
+        let mut w = FileWriter::new(VERSION_V2);
+        w.column(1, "a", tags::TYPE_I64, tags::ENC_PLAIN, false);
+        // Footer asserts 40 rows but the only page carries 4.
+        w.row_group(
+            40,
+            vec![(sample_page(), 4, tags::ENC_PLAIN)],
+            ZoneMap {
+                min: 0,
+                max: 1,
+                rows: 40,
+            },
+        );
+        let bytes = w.finish();
+        let img = open(&bytes).expect("open");
+        assert_eq!(img.groups[0].footer_rows, 40);
+        assert_eq!(img.physical_rows(0), 4);
+    }
+
+    #[test]
+    fn multi_group_writer_offsets_resolve() {
+        let mut w = FileWriter::new(VERSION_V2);
+        w.column(1, "a", tags::TYPE_I64, tags::ENC_PLAIN, false);
+        for g in 0..4 {
+            let page = crate::page::write_page(
+                tags::ENC_PLAIN,
+                2,
+                0,
+                &crate::page::plain::write_i64(&[g as i64, (g + 1) as i64]),
+            );
+            w.row_group(
+                2,
+                vec![(page, 2, tags::ENC_PLAIN)],
+                ZoneMap {
+                    min: g as i64,
+                    max: (g + 1) as i64,
+                    rows: 2,
+                },
+            );
+        }
+        let bytes = w.finish();
+        let img = open(&bytes).unwrap();
+        for (i, group) in img.groups.iter().enumerate() {
+            let blob = img.page_bytes(&group.pages[0]).unwrap();
+            assert!(!blob.is_empty(), "group {i}");
+        }
+    }
+}

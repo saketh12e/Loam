@@ -148,3 +148,69 @@ impl Schema {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn col(id: u32, enc: u32, chunk_v: u16) -> ColumnDesc {
+        ColumnDesc::new(id, format!("c{id}"), tags::TYPE_I64, enc, false, chunk_v).unwrap()
+    }
+
+    #[test]
+    fn v1_chunks_tolerate_forward_tags() {
+        assert!(col(1, tags::ENC_HYBRID, VERSION_V1).encoding == tags::ENC_HYBRID);
+        assert!(col(2, tags::ENC_HYBRID_V2, VERSION_V1).encoding == tags::ENC_HYBRID_V2);
+        assert!(ColumnDesc::new(3, "x".into(), tags::TYPE_I64, 8, false, VERSION_V1).is_err());
+    }
+
+    #[test]
+    fn v2_columns_accept_new_tags() {
+        assert!(col(1, tags::ENC_HYBRID_V2, VERSION_V2).encoding == tags::ENC_HYBRID_V2);
+    }
+
+    #[test]
+    fn native_v2_remaps_to_canonical() {
+        let s = Schema::from_columns(vec![col(1, tags::ENC_HYBRID_V2, VERSION_V2)], VERSION_V2)
+            .unwrap();
+        let plan = s.negotiate(&s.columns()[0]).unwrap();
+        assert_eq!(plan, ColumnPlan::Mapped(tags::ENC_HYBRID));
+    }
+
+    #[test]
+    fn legacy_chunk_takes_fast_path() {
+        let s = Schema::from_columns(vec![col(1, tags::ENC_RLE, VERSION_V1)], VERSION_V2).unwrap();
+        let plan = s.negotiate(&s.columns()[0]).unwrap();
+        assert_eq!(plan, ColumnPlan::Fast(tags::ENC_RLE));
+    }
+
+    #[test]
+    fn single_version_files_never_fast_path() {
+        let s = Schema::from_columns(vec![col(1, tags::ENC_RLE, VERSION_V1)], VERSION_V1).unwrap();
+        let plan = s.negotiate(&s.columns()[0]).unwrap();
+        assert_eq!(plan, ColumnPlan::Mapped(tags::ENC_RLE));
+    }
+
+    #[test]
+    fn duplicate_ids_rejected() {
+        assert!(Schema::from_columns(
+            vec![col(1, 1, VERSION_V2), col(1, 2, VERSION_V2)],
+            VERSION_V2
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn type_tags_validate() {
+        assert!(ColumnDesc::new(1, "x".into(), 0, 1, false, VERSION_V2).is_err());
+        assert!(ColumnDesc::new(1, "x".into(), 9, 1, false, VERSION_V2).is_err());
+        assert!(ColumnDesc::new(
+            1,
+            "x".into(),
+            tags::TYPE_UTF8,
+            tags::ENC_DICT,
+            true,
+            VERSION_V2
+        )
+        .is_ok());
+    }
+}

@@ -227,3 +227,56 @@ pub fn run_page_driver(raw: &[u8]) -> Result<usize> {
     Ok(rows)
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::schema::tags;
+
+    #[test]
+    fn container_round_trip() {
+        let p1 = write_page(tags::ENC_PLAIN, 2, 0, &[8; 16]);
+        let p2 = write_page(tags::ENC_RLE, 4, 0, &[1, 2, 3]);
+        let c = write_container(&[p1, p2], 7);
+        let (pages, hint) = parse_container(&c).unwrap();
+        assert_eq!(pages.len(), 2);
+        assert_eq!(pages[0].header.rows, 2);
+        assert_eq!(pages[1].header.encoding, tags::ENC_RLE);
+        assert_eq!(hint, 7);
+    }
+
+    #[test]
+    fn container_rejects_truncation() {
+        let c = write_container(&[write_page(tags::ENC_PLAIN, 1, 0, &[0; 8])], 0);
+        assert!(parse_container(&c[..c.len() - 3]).is_err());
+    }
+
+    #[test]
+    fn stride_table_covers_canonical_tags() {
+        for i in 0..7 {
+            assert!(dispatch::stride_for(i) > 0);
+        }
+    }
+
+    #[test]
+    fn data_page_reads_within_rows() {
+        let values: [i64; 4] = [10, 20, 30, 40];
+        let page = unsafe { DataPage::from_raw(values.as_ptr() as *const u8, 4, 8) };
+        let mut out = Vec::new();
+        page.read_slice(1, 2, &mut out);
+        let got: Vec<i64> = out
+            .chunks_exact(8)
+            .map(|c| i64::from_le_bytes(c.try_into().unwrap()))
+            .collect();
+        assert_eq!(got, vec![20, 30]);
+    }
+
+    #[test]
+    fn write_page_header_layout() {
+        let raw = write_page(tags::ENC_RLE, 9, FLAG_STARTS_RUN, &[1, 2]);
+        let mut r = Reader::new(&raw);
+        let h = PageHeader::parse(&mut r).unwrap();
+        assert_eq!(h.encoding, tags::ENC_RLE);
+        assert_eq!(h.rows, 9);
+        assert_eq!(h.flags, FLAG_STARTS_RUN);
+    }
+}

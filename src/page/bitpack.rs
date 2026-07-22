@@ -43,3 +43,24 @@ pub fn write(values: &[u64], width: u8) -> Vec<u8> {
     out
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn round_trip() {
+        let values: Vec<u64> = (0..37).map(|i| (i * 7) % 31).collect();
+        let payload = write(&values, 5);
+        assert_eq!(parse(&payload, values.len() as u32, 5).unwrap(), values);
+    }
+
+    #[test]
+    fn rejects_bad_width() {
+        assert!(parse(&[0u8; 8], 4, 33).is_err());
+    }
+
+    #[test]
+    fn rejects_short_payload() {
+        assert!(parse(&[0u8; 2], 100, 8).is_err());
+    }
+}

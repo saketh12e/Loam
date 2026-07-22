@@ -60,3 +60,29 @@ pub fn expand(page: &DictPage) -> Vec<&[u8]> {
         .collect()
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn round_trip() {
+        let payload = write(&[b"a", b"bb", b"ccc"], &[0, 2, 2, 1]);
+        let page = parse(&payload).unwrap();
+        let words = expand(&page);
+        assert_eq!(
+            words,
+            vec![
+                b"a".as_slice(),
+                b"ccc".as_slice(),
+                b"ccc".as_slice(),
+                b"bb".as_slice()
+            ]
+        );
+    }
+
+    #[test]
+    fn rejects_bad_id() {
+        let payload = write(&[b"a"], &[3]);
+        assert!(parse(&payload).is_err());
+    }
+}
