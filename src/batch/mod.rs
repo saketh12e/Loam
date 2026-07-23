@@ -190,3 +190,41 @@ pub fn expand_hybrid(page: &HybridPage) -> crate::error::Result<Vec<u8>> {
     Ok(builder.finish())
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::page::hybrid;
+
+    #[test]
+    fn batch_i64_round_trip() {
+        let batch = RecordBatch::from_i64s(vec![1, -2, 3]);
+        assert_eq!(batch.i64_column(0).unwrap(), vec![1, -2, 3]);
+        assert_eq!(batch.rows, 3);
+    }
+
+    #[test]
+    fn view_reads_what_it_borrows() {
+        let data = [9u8; 32];
+        let view = unsafe { View::from_raw(data.as_ptr(), 32, vec![Pin { page: 1, epoch: 4 }]) };
+        assert_eq!(view.read(), [9u8; 32]);
+        assert_eq!(view.head(4), [9u8; 4]);
+        let fork = view.fork();
+        assert_eq!(fork.pins(), view.pins());
+    }
+
+    #[test]
+    fn hybrid_expansion_small_page() {
+        let payload = hybrid::write(&[b"ab", b"c"], &[(0, 2), (1, 1)]);
+        let page = hybrid::parse(&payload).unwrap();
+        let stripe = expand_hybrid(&page).unwrap();
+        assert!(!stripe.is_empty());
+    }
+
+    #[test]
+    fn view_head_caps_at_len() {
+        let data = [3u8; 8];
+        let view = unsafe { View::from_raw(data.as_ptr(), 8, vec![]) };
+        assert_eq!(view.head(100).len(), 8);
+        assert!(!view.is_empty());
+    }
+}

@@ -131,3 +131,49 @@ impl Drop for PageCache {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn insert_and_hold_round_trip() {
+        let mut cache = PageCache::new(1 << 16);
+        let data = [5u8; 64];
+        cache.insert(1, &data).unwrap();
+        let view = cache.hold(1).unwrap();
+        assert_eq!(view.read(), data);
+    }
+
+    #[test]
+    fn eviction_respects_recent_pins() {
+        let mut cache = PageCache::new(128);
+        cache.insert(1, &[1u8; 96]).unwrap();
+        cache.hold(1).unwrap();
+        cache.advance_epoch();
+        cache.insert(2, &[2u8; 96]).unwrap();
+        // Page 1 was pinned this epoch before insertion of page 2; under
+        // pressure the sweep prefers pages pinned two epochs back.
+        assert!(cache.contains(1));
+    }
+
+    #[test]
+    fn stale_pages_are_recycled_under_pressure() {
+        let mut cache = PageCache::new(128);
+        cache.insert(1, &[1u8; 96]).unwrap();
+        cache.advance_epoch();
+        cache.advance_epoch();
+        cache.insert(2, &[2u8; 96]).unwrap();
+        assert!(!cache.contains(1));
+        assert!(cache.contains(2));
+    }
+
+    #[test]
+    fn insert_duplicate_keeps_first_copy() {
+        let mut cache = PageCache::new(1 << 12);
+        cache.insert(1, &[1u8; 32]).unwrap();
+        let first = cache.hold(1).unwrap().read();
+        cache.insert(1, &[2u8; 32]).unwrap();
+        let second = cache.hold(1).unwrap().read();
+        assert_eq!(first, second);
+    }
+}

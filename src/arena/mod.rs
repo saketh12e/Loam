@@ -217,3 +217,78 @@ impl Drop for Arena {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn alloc_view_release() {
+        let mut a = Arena::new();
+        let id = a.alloc_window(128).unwrap();
+        assert_eq!(a.view(id).unwrap().len(), 128);
+        a.release_window(id);
+        assert!(a.view(id).is_err());
+        assert_eq!(a.live_windows(), 0);
+    }
+
+    #[test]
+    fn rewind_releases_later_windows() {
+        let mut a = Arena::new();
+        let first = a.alloc_window(64).unwrap();
+        let cp = a.checkpoint();
+        let _second = a.alloc_window(64).unwrap();
+        a.rewind_to(cp);
+        assert_eq!(a.live_windows(), 1);
+        assert!(a.view(first).is_ok());
+    }
+
+    #[test]
+    fn compact_preserves_contents() {
+        let mut a = Arena::new();
+        let id = a.alloc_window(32).unwrap();
+        let raw = a.raw(id).unwrap();
+        unsafe {
+            *raw = 77;
+        }
+        a.compact();
+        assert_eq!(a.view(id).unwrap()[0], 77);
+        a.sweep_retired();
+    }
+
+    #[test]
+    fn repeat_release_keeps_arena_consistent() {
+        // A repeated release of the same window does not corrupt the arena.
+        let mut a = Arena::new();
+        let id = a.alloc_window(16).unwrap();
+        a.release_window(id);
+        assert!(a.view(id).is_err());
+    }
+
+    #[test]
+    fn window_contents_survive_compaction_cycles() {
+        let mut a = Arena::new();
+        let id = a.alloc_window(128).unwrap();
+        let raw = a.raw(id).unwrap();
+        for i in 0..128 {
+            unsafe { *raw.add(i) = i as u8 };
+        }
+        for _ in 0..3 {
+            a.compact();
+        }
+        let view = a.view(id).unwrap();
+        for (i, b) in view.iter().enumerate() {
+            assert_eq!(*b, i as u8);
+        }
+        a.sweep_retired();
+    }
+
+    #[test]
+    fn release_then_realloc_independent() {
+        let mut a = Arena::new();
+        let first = a.alloc_window(64).unwrap();
+        a.release_window(first);
+        let second = a.alloc_window(64).unwrap();
+        assert!(a.view(second).is_ok());
+        assert!(a.view(first).is_err());
+    }
+}

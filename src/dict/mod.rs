@@ -350,3 +350,66 @@ pub fn write_dict_segment(words: &[&[u8]], ids: &[u32]) -> Vec<u8> {
     out
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn words() -> Vec<Vec<u8>> {
+        vec![b"alpha".to_vec(), b"beta".to_vec(), b"gamma".to_vec()]
+    }
+
+    #[test]
+    fn word_store_serves_words() {
+        let store = WordStore::build(&words());
+        assert_eq!(store.words(), 3);
+        assert_eq!(store.word(1), b"beta");
+    }
+
+    #[test]
+    fn cursor_reads_through_store() {
+        let store = WordStore::build(&words());
+        let cursor = unsafe { DictCursor::bind(&store) };
+        assert_eq!(cursor.words(), 3);
+        assert_eq!(cursor.word(2), b"gamma");
+    }
+
+    #[test]
+    fn refresh_rotates_generations() {
+        let mut reg = DictRegistry::default();
+        reg.install(Dictionary::new(7, 1, words()));
+        let gen = reg.refresh(7, vec![b"delta".to_vec()], 1);
+        assert_eq!(gen, 2);
+        assert_eq!(reg.current(7).unwrap().generation, 2);
+        assert_eq!(reg.retired_refs(1), Some(1));
+        reg.release_retired(1);
+        assert_eq!(reg.retired_refs(1), None);
+        assert_eq!(reg.live_generations(), 0);
+    }
+
+    #[test]
+    fn retire_pass_frees_drained_only() {
+        let mut reg = DictRegistry::default();
+        reg.install(Dictionary::new(3, 1, words()));
+        reg.refresh(3, vec![b"x".to_vec()], 1);
+        reg.retire_pass();
+        assert_eq!(reg.live_generations(), 1); // refs still held
+        reg.release_retired(1);
+        assert_eq!(reg.live_generations(), 0);
+    }
+
+    #[test]
+    fn sweep_stage_picks_near_drained() {
+        let mut reg = DictRegistry::default();
+        reg.install(Dictionary::new(1, 1, vec![b"a".to_vec()]));
+        reg.refresh(1, vec![b"b".to_vec()], 1);
+        reg.refresh(1, vec![b"c".to_vec()], 3);
+        let staged = reg.sweep_stage();
+        assert_eq!(staged.len(), 1);
+        assert_eq!(staged[0].0, 1);
+        reg.release_retired(1);
+        reg.release_retired(2);
+        reg.release_retired(2);
+        reg.release_retired(2);
+        assert_eq!(reg.live_generations(), 0);
+    }
+}
