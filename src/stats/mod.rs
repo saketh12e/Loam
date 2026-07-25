@@ -135,3 +135,61 @@ pub fn write_stats_input(zones: &[(i64, i64, u32)], lo: i64, hi: i64) -> Vec<u8>
     out
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::format::{FileWriter, ZoneMap};
+    use crate::page::write_page;
+    use crate::schema::tags;
+
+    fn image_bytes(zone_rows: u32, page_rows: u32) -> Vec<u8> {
+        let mut w = FileWriter::new(crate::format::VERSION_V2);
+        w.column(1, "a", tags::TYPE_I64, tags::ENC_PLAIN, false);
+        let page = write_page(
+            tags::ENC_PLAIN,
+            page_rows,
+            0,
+            &vec![0u8; page_rows as usize * 8],
+        );
+        w.row_group(
+            zone_rows,
+            vec![(page, page_rows, tags::ENC_PLAIN)],
+            ZoneMap {
+                min: 0,
+                max: 100,
+                rows: zone_rows,
+            },
+        );
+        w.finish()
+    }
+
+    #[test]
+    fn prunes_by_zone_overlap() {
+        let bytes = image_bytes(4, 4);
+        let img = crate::format::open(&bytes).unwrap();
+        let pruner = Pruner::new(&img);
+        assert_eq!(pruner.matching_groups(50, 60), vec![0]);
+        assert!(pruner.matching_groups(200, 300).is_empty());
+    }
+
+    #[test]
+    fn ranges_cover_published_rows() {
+        let bytes = image_bytes(4, 4);
+        let img = crate::format::open(&bytes).unwrap();
+        let pruner = Pruner::new(&img);
+        let ranges = pruner.ranges(0).unwrap();
+        let total: u32 = ranges.iter().map(|r| r.row_len).sum();
+        assert_eq!(total, 4);
+    }
+
+    #[test]
+    fn stats_driver_rejects_empty() {
+        assert!(run_stats_driver(&[]).is_err());
+    }
+
+    #[test]
+    fn histogram_out_of_range_estimates_zero() {
+        let h = histogram::Histogram::build(&[0, 1, 2], 2).unwrap();
+        assert_eq!(h.estimate(100, 200), 0);
+    }
+}

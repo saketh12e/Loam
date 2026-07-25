@@ -355,3 +355,63 @@ pub fn write_eval_input(text: &str, values: &[i64], late: Option<(i64, i64, u32)
     out
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_and_evaluates() {
+        let ast = parse("temp > 30 and temp < 90").unwrap();
+        assert!(eval(&ast, 50));
+        assert!(!eval(&ast, 10));
+        assert!(!eval(&ast, 120));
+    }
+
+    #[test]
+    fn or_chains() {
+        let ast = parse("a == 1 or a == 2").unwrap();
+        assert!(eval(&ast, 1));
+        assert!(eval(&ast, 2));
+        assert!(!eval(&ast, 3));
+    }
+
+    #[test]
+    fn rejects_garbage() {
+        assert!(parse("temp >> 3").is_err());
+        assert!(parse("").is_err());
+        assert!(parse("temp > ").is_err());
+    }
+
+    #[test]
+    fn estimates_shrink_on_and() {
+        let wide = compile(parse("a > 0").unwrap());
+        let narrow = compile(parse("a > 0 and a < 10").unwrap());
+        assert!(narrow.est_per_1024 < wide.est_per_1024);
+    }
+
+    #[test]
+    fn relaxation_widens_bounds() {
+        let ast = parse("temp > 30 and temp < 90").unwrap();
+        let relaxed = relax_to_zone(&ast, -100, 500);
+        assert!(eval(&relaxed, 0));
+        assert!(eval(&relaxed, 200));
+        assert!(!eval(&relaxed, -200));
+    }
+
+    #[test]
+    fn eval_input_round_trip() {
+        let bytes = write_eval_input("a > 1", &[1, 2, 3], Some((0, 10, 500_000)));
+        let (text, values, late) = parse_eval_input(&bytes).unwrap();
+        assert_eq!(text, "a > 1");
+        assert_eq!(values, vec![1, 2, 3]);
+        assert!(late.is_some());
+    }
+
+    #[test]
+    fn deeply_nested_and_or() {
+        let ast = parse("a > 1 and a > 2 and a > 3 or a == 0").unwrap();
+        assert!(eval(&ast, 4));
+        assert!(eval(&ast, 0));
+        assert!(!eval(&ast, 2));
+    }
+}

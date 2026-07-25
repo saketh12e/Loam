@@ -190,3 +190,52 @@ impl PlanCache {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_plan() -> Vec<PlanNode> {
+        vec![
+            PlanNode::Scan { column: 1 },
+            PlanNode::Filter {
+                text: "temp > 10".into(),
+            },
+            PlanNode::GroupBy {
+                column: 1,
+                agg: Agg::Sum,
+            },
+            PlanNode::Limit { rows: 100 },
+        ]
+    }
+
+    #[test]
+    fn bytecode_round_trip() {
+        let plan = sample_plan();
+        let bytes = encode(&plan);
+        assert_eq!(decode(&bytes).unwrap(), plan);
+    }
+
+    #[test]
+    fn rejects_bad_op() {
+        let bytes = vec![1u8, 99, 0];
+        assert!(decode(&bytes).is_err());
+    }
+
+    #[test]
+    fn cache_compiles_once() {
+        let mut cache = PlanCache::default();
+        let dicts = DictRegistry::default();
+        let plan = sample_plan();
+        cache.get_or_compile(1, 3, &plan, &dicts).unwrap();
+        cache.get_or_compile(1, 3, &plan, &dicts).unwrap();
+        assert_eq!(cache.cached_plans(), 1);
+    }
+
+    #[test]
+    fn project_round_trip_many_columns() {
+        let nodes = vec![PlanNode::Project {
+            columns: (0..40).collect(),
+        }];
+        assert_eq!(decode(&encode(&nodes)).unwrap(), nodes);
+    }
+}
