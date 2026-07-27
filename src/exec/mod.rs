@@ -204,3 +204,90 @@ pub fn run_spill_replay(raw: &[u8]) -> Result<usize> {
     Ok(hits)
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::plan::{Agg, PlanNode};
+
+    #[test]
+    fn pipeline_filter_group_limit() {
+        let nodes = vec![
+            PlanNode::Scan { column: 1 },
+            PlanNode::Filter {
+                text: "a > 5".into(),
+            },
+            PlanNode::GroupBy {
+                column: 1,
+                agg: Agg::Count,
+            },
+        ];
+        let values = vec![1, 10, 20, 3, 30];
+        assert_eq!(run_pipeline(&nodes, &values, 64).unwrap(), 1);
+    }
+
+    #[test]
+    fn abort_before_spill_cleans_up() {
+        // A failing stage *before* any spill: cleanup is ordinary.
+        let nodes = vec![
+            PlanNode::Scan { column: 1 },
+            PlanNode::Filter {
+                text: "not valid (".into(),
+            },
+        ];
+        let values = vec![1, 2, 3];
+        assert!(run_pipeline(&nodes, &values, 64).is_err());
+    }
+
+    #[test]
+    fn successful_spill_reconciles_windows() {
+        let nodes = vec![
+            PlanNode::Scan { column: 1 },
+            PlanNode::GroupBy {
+                column: 1,
+                agg: Agg::Sum,
+            },
+            PlanNode::Limit { rows: 4 },
+        ];
+        let values: Vec<i64> = (0..64).collect();
+        assert!(run_pipeline(&nodes, &values, 2).is_ok());
+    }
+
+    #[test]
+    fn plan_input_round_trip() {
+        let nodes = vec![PlanNode::Limit { rows: 3 }];
+        let bytes = plan::encode(&nodes);
+        let input = write_plan_input(&bytes, &[1, 2, 3], 8);
+        let (n, v, w) = parse_plan_input(&input).unwrap();
+        assert_eq!(n, nodes);
+        assert_eq!(v, vec![1, 2, 3]);
+        assert_eq!(w, 8);
+    }
+
+    #[test]
+    fn spill_input_round_trip() {
+        let input = write_spill_input(&[5, 6, 7], 2, &[1, 2]);
+        let (v, w, k) = parse_spill_input(&input).unwrap();
+        assert_eq!(v, vec![5, 6, 7]);
+        assert_eq!(w, 2);
+        assert_eq!(k, vec![1, 2]);
+    }
+
+    #[test]
+    fn spill_replay_below_watermark() {
+        let input = write_spill_input(&[10, 20, 30], 64, &[1]);
+        assert_eq!(run_spill_replay(&input).unwrap(), 1);
+    }
+
+    #[test]
+    fn pipeline_stages_each_once() {
+        let nodes = vec![
+            PlanNode::Scan { column: 1 },
+            PlanNode::Filter {
+                text: "a > 0".into(),
+            },
+            PlanNode::Project { columns: vec![1] },
+            PlanNode::Limit { rows: 2 },
+        ];
+        assert_eq!(run_pipeline(&nodes, &[1, -1, 2, 3], 64).unwrap(), 2);
+    }
+}

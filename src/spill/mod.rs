@@ -165,3 +165,54 @@ impl Default for Spiller {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn segment_round_trip() {
+        let seg = write_segment(&[(7, b"payload".to_vec()), (9, b"x".to_vec())]);
+        let parts = read_segment(&seg).unwrap();
+        assert_eq!(parts.len(), 2);
+        assert_eq!(parts[0], (7, b"payload".to_vec()));
+    }
+
+    #[test]
+    fn rejects_bad_magic() {
+        assert!(read_segment(b"NOPE").is_err());
+    }
+
+    #[test]
+    fn claim_and_reload_preserves_bytes() {
+        let mut arena = Arena::new();
+        let id = arena.alloc_window(32).unwrap();
+        let raw = arena.raw(id).unwrap();
+        unsafe {
+            *raw = 42;
+        }
+        let mut spiller = Spiller::new();
+        spiller.claim(&mut arena, id, 5).unwrap();
+        let parts = spiller.reload(&mut arena).unwrap();
+        assert_eq!(parts.len(), 1);
+        assert_eq!(parts[0].1[0], 42);
+        // Ownership of the window moved to the ledger at claim time; the
+        // arena relinquishes it and the ledger's drop recycles it.
+        arena.forget_window(id);
+    }
+
+    #[test]
+    fn replay_container_round_trip() {
+        let seg = write_segment(&[(1, b"a".to_vec())]);
+        let c = Spiller::write_replay_container(&seg, &[1, 2, 3]);
+        let (seg2, keys) = Spiller::parse_replay_container(&c).unwrap();
+        assert_eq!(seg, seg2);
+        assert_eq!(keys, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn empty_segment_rejected_by_count_cap() {
+        let mut raw = SEGMENT_MAGIC.to_vec();
+        crate::bytes::write_varint(&mut raw, 9999);
+        assert!(read_segment(&raw).is_err());
+    }
+}

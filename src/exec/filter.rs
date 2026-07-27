@@ -83,3 +83,48 @@ pub fn run_eval_driver(raw: &[u8]) -> crate::error::Result<usize> {
     Ok(selected.len())
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn counts_then_writes_exactly_without_relaxation() {
+        let values = vec![1, 5, 7, 12, 20, 3];
+        let ast = expr::parse("a > 4 and a < 15").unwrap();
+        let sel = FilterKernel::compact_selection(&values, &ast, None);
+        assert_eq!(sel, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn eval_driver_without_stats() {
+        let bytes = expr::write_eval_input("a >= 2", &[1, 2, 3, 4], None);
+        assert_eq!(run_eval_driver(&bytes).unwrap(), 3);
+    }
+
+    #[test]
+    fn eval_driver_rejects_bad_expression() {
+        let bytes = expr::write_eval_input("a >>", &[1], None);
+        assert!(run_eval_driver(&bytes).is_err());
+    }
+
+    #[test]
+    fn empty_input_selects_nothing() {
+        let ast = expr::parse("a > 0").unwrap();
+        assert!(FilterKernel::compact_selection(&[], &ast, None).is_empty());
+    }
+
+    #[test]
+    fn all_matching_selects_all() {
+        let ast = expr::parse("a >= 0").unwrap();
+        let sel = FilterKernel::compact_selection(&[0, 1, 2], &ast, None);
+        assert_eq!(sel, vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn relaxed_without_stats_differs_none() {
+        let ast = expr::parse("a > 5").unwrap();
+        let relaxed = expr::relax_to_zone(&ast, 0, 100);
+        let sel = FilterKernel::compact_selection(&[3, 50], &ast, Some(&relaxed));
+        assert_eq!(sel, vec![0, 1]);
+    }
+}

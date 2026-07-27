@@ -71,3 +71,34 @@ pub fn run_join_driver(raw: &[u8]) -> Result<usize> {
     Ok(inner_join_count(&left, &right))
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn join_counts_pairs() {
+        assert_eq!(inner_join_count(&[1, 2, 2, 3], &[2, 4]), 2);
+        assert_eq!(inner_join_count(&[], &[1]), 0);
+    }
+
+    #[test]
+    fn join_variants() {
+        assert_eq!(left_join_count(&[1, 2, 3], &[2]), 3);
+        assert_eq!(semi_join_count(&[1, 2, 3], &[2, 3]), 2);
+        assert_eq!(anti_join_count(&[1, 2, 3], &[2, 3]), 1);
+    }
+
+    #[test]
+    fn driver_round_trip() {
+        let input = write_join_input(&[1, 2], &[2, 3]);
+        assert_eq!(run_join_driver(&input).unwrap(), 1);
+    }
+
+    #[test]
+    fn empty_sides_join_zero() {
+        assert_eq!(inner_join_count(&[], &[]), 0);
+        assert_eq!(semi_join_count(&[], &[1]), 0);
+        assert_eq!(anti_join_count(&[], &[1]), 0);
+        assert_eq!(left_join_count(&[], &[1]), 0);
+    }
+}

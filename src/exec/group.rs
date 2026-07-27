@@ -103,3 +103,45 @@ impl GroupTable {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn build_and_probe() {
+        let mut arena = Arena::new();
+        let values = vec![10i64, 12, 40, 45, 90];
+        let table = GroupTable::build(&mut arena, &values, 10).unwrap();
+        assert_eq!(table.groups(), 3);
+        assert_eq!(table.probe(4), Some(40));
+        assert_eq!(table.probe(99), None);
+    }
+
+    #[test]
+    fn small_tables_never_spill() {
+        let mut arena = Arena::new();
+        let values = vec![1i64, 2, 3];
+        let mut table = GroupTable::build(&mut arena, &values, 1).unwrap();
+        let mut spiller = Spiller::new();
+        let claimed = table.spill_cold(&mut arena, &mut spiller, 16).unwrap();
+        assert!(claimed.is_none());
+        assert!(!spiller.has_segment());
+        assert_eq!(table.probe(2), Some(2));
+    }
+
+    #[test]
+    fn group_width_splits_keys() {
+        let mut arena = Arena::new();
+        let table = GroupTable::build(&mut arena, &[5, 15, 25, 35], 10).unwrap();
+        assert_eq!(table.groups(), 4);
+        assert_eq!(table.probe(0), Some(5));
+        assert_eq!(table.probe(3), Some(35));
+    }
+
+    #[test]
+    fn duplicate_values_share_group() {
+        let mut arena = Arena::new();
+        let table = GroupTable::build(&mut arena, &[7, 7, 7], 10).unwrap();
+        assert_eq!(table.groups(), 1);
+    }
+}
