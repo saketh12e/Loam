@@ -159,3 +159,61 @@ pub fn expand(runs: &[Run]) -> Vec<i64> {
     out
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::page::{write_page, PageHeader};
+    use crate::schema::tags;
+
+    fn page(runs: &[Run], flags: u8) -> ContainerPage {
+        let payload = write_runs(runs);
+        let rows: u32 = runs.iter().map(|r| r.len).sum();
+        ContainerPage {
+            header: PageHeader {
+                encoding: tags::ENC_RLE,
+                rows,
+                flags,
+            },
+            payload,
+        }
+    }
+
+    #[test]
+    fn single_page_round_trip() {
+        let runs = vec![Run { value: 5, len: 3 }, Run { value: 9, len: 2 }];
+        let decoded = decode_chain(&[page(&runs, 0)]).unwrap();
+        assert_eq!(decoded, runs);
+        assert_eq!(expand(&decoded), vec![5, 5, 5, 9, 9]);
+    }
+
+    #[test]
+    fn two_page_chain_merges_boundary() {
+        let p1 = vec![Run { value: 5, len: 3 }, Run { value: 7, len: 1 }];
+        let p2 = vec![Run { value: 7, len: 4 }, Run { value: 2, len: 2 }];
+        let decoded =
+            decode_chain(&[page(&p1, FLAG_STARTS_RUN), page(&p2, FLAG_ENDS_RUN)]).unwrap();
+        assert_eq!(
+            decoded,
+            vec![
+                Run { value: 5, len: 3 },
+                Run { value: 7, len: 5 },
+                Run { value: 2, len: 2 }
+            ]
+        );
+    }
+
+    #[test]
+    fn unterminated_chain_is_an_error() {
+        let p1 = vec![Run { value: 5, len: 3 }];
+        assert!(decode_chain(&[page(&p1, FLAG_STARTS_RUN)]).is_err());
+    }
+
+    #[test]
+    fn write_page_carrying_runs_parses_back() {
+        let runs = vec![Run { value: -4, len: 6 }];
+        let raw = write_page(tags::ENC_RLE, 6, 0, &write_runs(&runs));
+        let (pages, _) =
+            crate::page::parse_container(&crate::page::write_container(&[raw], 0)).unwrap();
+        assert_eq!(decode_chain(&pages).unwrap(), runs);
+    }
+}

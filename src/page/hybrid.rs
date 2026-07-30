@@ -94,3 +94,34 @@ pub fn plan_stripe(rows: u32) -> usize {
     rows.wrapping_mul(STRIPE_STRIDE) as usize
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn round_trip() {
+        let payload = write(&[b"alpha", b"beta"], &[(0, 3), (1, 2), (0, 1)]);
+        let page = parse(&payload).unwrap();
+        assert_eq!(page.words.len(), 2);
+        assert_eq!(page.runs, vec![(0, 3), (1, 2), (0, 1)]);
+        assert_eq!(expanded_rows(&page).unwrap(), 6);
+    }
+
+    #[test]
+    fn rejects_oversized_word() {
+        let big = vec![b'x'; STRIPE_STRIDE as usize + 1];
+        let payload = write(&[&big], &[(0, 1)]);
+        assert!(parse(&payload).is_err());
+    }
+
+    #[test]
+    fn rejects_out_of_range_word_id() {
+        let payload = write(&[b"only"], &[(7, 1)]);
+        assert!(parse(&payload).is_err());
+    }
+
+    #[test]
+    fn stripe_planning_matches_small_pages() {
+        assert_eq!(plan_stripe(6), 6 * STRIPE_STRIDE as usize);
+    }
+}
