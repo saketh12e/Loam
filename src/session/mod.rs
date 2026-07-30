@@ -330,3 +330,91 @@ pub fn run_session_driver(raw: &[u8]) -> Result<u64> {
     Ok(session.read_checksum)
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ingest_hold_read() {
+        let script = ScriptWriter::new()
+            .ingest(1, &[7u8; 32])
+            .hold(1)
+            .read(0)
+            .close()
+            .finish();
+        assert!(run_session_driver(&script).is_ok());
+    }
+
+    #[test]
+    fn fork_and_read_both() {
+        let script = ScriptWriter::new()
+            .ingest(1, &[3u8; 16])
+            .hold(1)
+            .fork(0)
+            .read(0)
+            .read(1)
+            .close()
+            .finish();
+        assert!(run_session_driver(&script).is_ok());
+    }
+
+    #[test]
+    fn dict_query_after_install() {
+        let script = ScriptWriter::new()
+            .install_dict(1, &[b"aa", b"bb"])
+            .query_dict(1, 3, &[0, 1, 1])
+            .close()
+            .finish();
+        assert!(run_session_driver(&script).is_ok());
+    }
+
+    #[test]
+    fn refresh_with_live_view_then_invalidate() {
+        let script = ScriptWriter::new()
+            .install_dict(1, &[b"aa", b"bb"])
+            .create_view(1, 1, "k > 1")
+            .refresh_dict(1, 1, &[b"cc"])
+            .invalidate_view(1)
+            .close()
+            .finish();
+        assert!(run_session_driver(&script).is_ok());
+    }
+
+    #[test]
+    fn sweep_after_invalidate_is_clean() {
+        let script = ScriptWriter::new()
+            .install_dict(1, &[b"aa"])
+            .create_view(1, 1, "k > 1")
+            .refresh_dict(1, 1, &[b"cc"])
+            .invalidate_view(1)
+            .begin_sweep()
+            .close()
+            .finish();
+        assert!(run_session_driver(&script).is_ok());
+    }
+
+    #[test]
+    fn unknown_op_errors() {
+        let script = vec![0xffu8];
+        assert!(run_session_driver(&script).is_err());
+    }
+
+    #[test]
+    fn read_missing_view_errors() {
+        let script = ScriptWriter::new().read(4).finish();
+        assert!(run_session_driver(&script).is_err());
+    }
+
+    #[test]
+    fn script_writer_is_deterministic() {
+        let build = || {
+            ScriptWriter::new()
+                .ingest(1, &[5u8; 8])
+                .hold(1)
+                .read(0)
+                .close()
+                .finish()
+        };
+        assert_eq!(build(), build());
+    }
+}

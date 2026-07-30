@@ -15,3 +15,29 @@ impl Metrics {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn snapshot_copies() {
+        let m = Metrics {
+            pages_decoded: 7,
+            ..Default::default()
+        };
+        let s = m.snapshot();
+        assert_eq!(s.pages_decoded, 7);
+    }
+
+    #[test]
+    fn counters_accumulate() {
+        let mut m = Metrics::default();
+        m.files_opened += 2;
+        m.pages_decoded += 40;
+        m.spills += 1;
+        let s = m.snapshot();
+        assert_eq!(s.files_opened, 2);
+        assert_eq!(s.pages_decoded, 40);
+        assert_eq!(s.spills, 1);
+    }
+}

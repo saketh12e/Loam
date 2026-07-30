@@ -119,3 +119,43 @@ pub fn write_view_input(column: u32, words: &[&[u8]], texts: &[&str]) -> Vec<u8>
     out
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::dict::Dictionary;
+
+    fn words() -> Vec<Vec<u8>> {
+        vec![b"a".to_vec(), b"b".to_vec()]
+    }
+
+    #[test]
+    fn create_and_invalidate() {
+        let mut dicts = DictRegistry::default();
+        dicts.install(Dictionary::new(1, 1, words()));
+        dicts.refresh(1, vec![b"c".to_vec()], 1);
+        let mut views = ViewRegistry::default();
+        let id = views.create(1, 1, "k > 1");
+        assert_eq!(views.len(), 1);
+        assert_eq!(dicts.retired_refs(1), Some(1));
+        views.invalidate(id, &mut dicts).unwrap();
+        assert!(views.is_empty());
+        assert_eq!(dicts.retired_refs(1), None);
+    }
+
+    #[test]
+    fn invalidate_missing_view_errors() {
+        let mut views = ViewRegistry::default();
+        let mut dicts = DictRegistry::default();
+        assert!(views.invalidate(99, &mut dicts).is_err());
+    }
+
+    #[test]
+    fn view_lookup_returns_meta() {
+        let mut registry = ViewRegistry::default();
+        let id = registry.create(7, 3, "temp > 0");
+        let view = registry.get(id).unwrap();
+        assert_eq!(view.column, 7);
+        assert_eq!(view.generation, 3);
+        assert_eq!(view.text, "temp > 0");
+    }
+}

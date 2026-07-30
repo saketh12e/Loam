@@ -58,3 +58,28 @@ impl Diagnostics {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bounded_log() {
+        let mut d = Diagnostics::default();
+        for i in 0..100 {
+            d.info(format!("event {i}"));
+        }
+        assert_eq!(d.len(), MAX_EVENTS);
+        assert!(d.render().contains("event 99"));
+    }
+
+    #[test]
+    fn oldest_events_evicted() {
+        let mut d = Diagnostics::default();
+        for i in 0..80 {
+            d.warn(format!("w{i}"));
+        }
+        assert_eq!(d.len(), MAX_EVENTS);
+        assert!(d.render().contains("w79"));
+        assert!(!d.render().contains("w0"));
+    }
+}

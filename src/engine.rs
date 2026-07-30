@@ -109,3 +109,58 @@ pub fn run_file_driver(raw: &[u8]) -> Result<usize> {
     Ok(materialized)
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::format::{FileWriter, ZoneMap};
+    use crate::page::write_page;
+    use crate::schema::tags;
+
+    fn sample_file() -> Vec<u8> {
+        let mut w = FileWriter::new(format::VERSION_V2);
+        w.column(1, "temp", tags::TYPE_I64, tags::ENC_PLAIN, false);
+        let page = write_page(tags::ENC_PLAIN, 4, 0, &[0u8; 32]);
+        w.row_group(
+            4,
+            vec![(page, 4, tags::ENC_PLAIN)],
+            ZoneMap {
+                min: 10,
+                max: 99,
+                rows: 4,
+            },
+        );
+        w.finish()
+    }
+
+    #[test]
+    fn open_and_plan_scan() {
+        let bytes = sample_file();
+        let mut engine = Engine::new();
+        let image = engine.open_bytes(&bytes).unwrap();
+        let ranges = engine.plan_scan(&image, 50, 60).unwrap();
+        assert_eq!(ranges.len(), 1);
+        assert!(engine.plan_scan(&image, 500, 600).unwrap().is_empty());
+    }
+
+    #[test]
+    fn file_driver_materializes_plain_groups() {
+        let bytes = sample_file();
+        assert_eq!(run_file_driver(&bytes).unwrap(), 4);
+    }
+
+    #[test]
+    fn engine_session_starts_clean() {
+        let engine = Engine::new();
+        let session = engine.session(1 << 12);
+        assert_eq!(session.read_checksum, 0);
+    }
+
+    #[test]
+    fn metrics_count_opens() {
+        let bytes = sample_file();
+        let mut engine = Engine::new();
+        let _ = engine.open_bytes(&bytes).unwrap();
+        let _ = engine.open_bytes(&bytes).unwrap();
+        assert_eq!(engine.metrics.files_opened, 2);
+    }
+}
